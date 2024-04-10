@@ -1,0 +1,72 @@
+---
+- hosts: localhost
+  become: yes
+  tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+
+    - name: Install python
+      shell: |
+        sudo apt update
+        sudo apt install software-properties-common 
+        sudo add-apt-repository ppa:deadsnakes/ppa
+        sudo apt update
+        sudo apt install python3.12 -y 
+        echo "Installed python3"
+        python3 --version
+
+    - name: Create env file for python boto3
+      shell: |
+        IP_ADDR=$(dig -4 myip.opendns.com @resolver1.opendns.com +short)
+        if [ "$IP_ADDR" = "" ]; then
+          IP_ADDR=$(curl -s ifconfig.me)
+        fi
+
+        cd python
+
+        SERVER_HOST=$IP_ADDR      
+
+        echo "Checking the necessary variables"
+
+        echo ${netmaker_domain}
+        echo $SERVER_HOST
+        echo "-----------------------------------------------------"
+        echo "Creating .env for boto3"
+        echo "-----------------------------------------------------"
+
+        echo "SECRET_NAME=${secret_name}" >> .env
+        echo "DOMAIN=${netmaker_domain}" >> .env 
+        echo "HOSTED_ZONE_ID=${hosted_zone_id}" >> .env
+        echo "SERVER_IP=$SERVER_HOST" >> .env
+        echo "AWS_ACCESS_KEY=${access_key}" >> .env
+        echo "AWS_SECRET_KEY=${secret_key}" >> .env
+        echo "AWS_REGION=${aws_region}" >> .env
+
+    - name: Passing NETMAKER DOMAIN variable for nm-quick.sh netmaker script
+      shell: |
+        sudo sed -i "/GET_EMAIL=/a DOMAIN=\"${netmaker_domain}\"" /home/ubuntu/nm-quick.sh
+
+    - name: Installing dependencies
+      shell: |
+        cd python
+        apt install python3-pip -y
+        pip install boto3
+        pip install python-dotenv
+
+    - name: Running python boto3 to create the Route 53 record
+      shell: |
+        cd python
+        python3 route53.py
+
+    - name: Installing Netmaker
+      shell: |
+        sleep 10
+        sudo cp /home/ubuntu/nm-quick.sh /root/nm-quick.sh
+        sudo chmod +x /root/nm-quick.sh
+        sudo /root/nm-quick.sh
+
+    - name: Exporting Token for Secrets Managers to netclients machines
+      shell: |
+        cd python
+        python3 create_secrets.py
